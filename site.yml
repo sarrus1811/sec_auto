@@ -1,0 +1,20 @@
+---
+- name: Provision AlmaLinux 10 DFIR, Reversing & eBPF Malware Platform
+  hosts: secops
+  become: true
+
+  roles:
+    - role: base_os
+      tags: [base, os_deps, dnf]
+
+    - role: mise_toolchain
+      tags: [mise, runtimes, cli_tools]
+
+    - role: ebpf_sensors
+      tags: [ebpf, daemons, opt_suites]
+
+    - role: podman_wrappers
+      tags: [podman, containers, rootless]
+
+    - role: cis_hardening
+      tags: [cis, compliance, never]

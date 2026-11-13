@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Managed by Ansible - Rootless Podman Web Launcher for {{ item.name }}
+set -euo pipefail
+
+ACTION="${1:-start}"
+
+if [[ "$ACTION" == "stop" ]]; then
+    podman stop "{{ item.name }}" && podman rm "{{ item.name }}"
+    exit 0
+fi
+
+echo "[*] Starting {{ item.name }} on http://127.0.0.1:{{ item.host_port }} ..."
+podman run -d --rm \
+    --name "{{ item.name }}" \
+    --publish "127.0.0.1:{{ item.host_port }}:{{ item.container_port }}" \
+    --volume "${HOME}/samples:/samples:Z" \
+    "{{ item.image }}"

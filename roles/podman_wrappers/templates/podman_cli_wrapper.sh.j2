@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Managed by Ansible - Rootless Podman CLI Wrapper for {{ item.name }}
+set -euo pipefail
+
+exec podman run --rm -it \
+    --network=none \
+    --security-opt=no-new-privileges \
+    --volume "${PWD}:/work:Z" \
+    --workdir /work \
+    "{{ item.image }}" \
+    {{ item.cmd }} "$@"

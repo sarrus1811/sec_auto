@@ -1,0 +1,32 @@
+# Managed by Ansible - Global SecOps Mise Manifest
+[env]
+MISE_DATA_DIR = "{{ mise_data_dir }}"
+MISE_CACHE_DIR = "{{ mise_cache_dir }}"
+DOTNET_ROLL_FORWARD = "Major"
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+
+[settings]
+experimental = true
+pipx.uvx = true
+status.show_tools = true
+
+[tools]
+{% for runtime, version in mise_runtimes.items() %}
+{% if version is string %}
+"{{ runtime }}" = "{{ version }}"
+{% else %}
+"{{ runtime }}" = {{ version | to_json }}
+{% endif %}
+{% endfor %}
+
+{% for tool in mise_pipx_tools %}
+"pipx:{{ tool }}" = "latest"
+{% endfor %}
+
+{% for tool in mise_cargo_tools %}
+"cargo:{{ tool }}" = "latest"
+{% endfor %}
+
+{% for tool in mise_github_tools %}
+"github:{{ tool.repo }}" = "latest"
+{% endfor %}

@@ -1,0 +1,167 @@
+---
+- name: Enable CRB repository on AlmaLinux 10
+  ansible.builtin.command:
+    cmd: dnf config-manager --set-enabled crb
+  changed_when: false
+
+- name: Install EPEL 10 and dnf-plugins-core
+  ansible.builtin.dnf:
+    name:
+      - epel-release
+      - dnf-plugins-core
+    state: present
+
+- name: Add official Incus COPR repository for EL10
+  ansible.builtin.get_url:
+    url: "https://copr.fedorainfracloud.org/coprs/neelc/incus/repo/rhel+epel-10/neelc-incus-rhel+epel-10.repo"
+    dest: /etc/yum.repos.d/incus.repo
+    mode: '0644'
+
+- name: Add VSCodium and Google Cloud CLI RPM repositories
+  ansible.builtin.copy:
+    dest: "{{ item.dest }}"
+    mode: '0644'
+    content: "{{ item.content }}"
+  loop:
+    - dest: /etc/yum.repos.d/vscodium.repo
+      content: |
+        [gitlab.com_paulcarroty_vscodium_repo]
+        name=VSCodium Repository
+        baseurl=https://download.vscodium.com/rpms/
+        enabled=1
+        gpgcheck=1
+        repo_gpgcheck=1
+        gpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
+        metadata_expire=1h
+    - dest: /etc/yum.repos.d/google-cloud-sdk.repo
+      content: |
+        [google-cloud-cli]
+        name=Google Cloud CLI
+        baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el9-x86_64
+        enabled=1
+        gpgcheck=0
+        repo_gpgcheck=0
+
+- name: Install Tier 1 Compilers, Workstation Apps, Containers, eBPF & DFIR Packages
+  ansible.builtin.dnf:
+    name:
+      # Core Compilers & Build Toolchains
+      - gcc
+      - gcc-c++
+      - clang
+      - llvm
+      - lld
+      - make
+      - cmake
+      - pkgconf-pkg-config
+      - openssl-devel
+      - libffi-devel
+      - fontconfig-devel
+      - freetype-devel
+      - bzip2-devel
+      - xz-devel
+      - zlib-devel
+      - libicu
+      - fuse3
+      - fuse3-devel
+      - python3-devel
+      - rust-toolset
+      - cargo
+      # Workstation Editors, IDEs, Browsers & Terminal Ergonomics
+      - emacs
+      - codium
+      - chromium
+      - tmux
+      - terminator
+      - fzf
+      - bat
+      - btop
+      - ripgrep
+      - fd-find
+      - git
+      - curl
+      - wget
+      - unzip
+      - tar
+      - jq
+      # Cloud & Container Checkpointing / Forensics
+      - google-cloud-cli
+      - criu
+      - libplist
+      # Kernel eBPF & Tracing Tooling
+      - bpftool
+      - bpftrace
+      - libbpf-devel
+      - "kernel-devel-{{ ansible_facts['kernel'] }}"
+      - "kernel-headers-{{ ansible_facts['kernel'] }}"
+      # Container, Emulation & Sandbox Engines
+      - podman
+      - podman-docker
+      - buildah
+      - skopeo
+      - crun
+      - bubblewrap
+      - incus
+      - incus-tools
+      - qemu-kvm
+      # Static/Dynamic Reversing & Binary Utilities
+      - radare2
+      - rizin
+      - gdb
+      - strace
+      - ltrace
+      - patchelf
+      - pax-utils
+      - elfutils
+      # Disk, Memory & Network Forensics (SANS SIFT Core)
+      - yara
+      - sleuthkit
+      - testdisk
+      - perl-Image-ExifTool
+      - rkhunter
+      - wireshark-cli
+      - tcpdump
+      - suricata
+    state: present
+
+- name: Ensure current user belongs to wheel and incus-admin groups
+  ansible.builtin.user:
+    name: "{{ analyst_user }}"
+    groups:
+      - wheel
+      - incus-admin
+    append: true
+
+- name: Configure subuid and subgid ranges for Rootless Podman and Incus
+  ansible.builtin.copy:
+    dest: "{{ item }}"
+    mode: '0644'
+    content: |
+      {{ analyst_user }}:100000:65536
+      root:1000000:1000000000
+  loop:
+    - /etc/subuid
+    - /etc/subgid
+
+- name: Ensure firewalld is running before configuring Incus bridge
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+
+- name: Trust incusbr0 interface in firewalld for nftables routing
+  ansible.posix.firewalld:
+    zone: trusted
+    interface: incusbr0
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: Enable and start Incus and Podman sockets
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - incus.socket
+    - podman.socket

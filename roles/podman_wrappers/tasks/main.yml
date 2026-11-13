@@ -1,0 +1,101 @@
+---
+- name: Resolve numeric UID for {{ analyst_user }}
+  ansible.builtin.command:
+    cmd: "id -u {{ analyst_user }}"
+  register: analyst_uid_cmd
+  changed_when: false
+
+- name: Set analyst_uid fact dynamically
+  ansible.builtin.set_fact:
+    analyst_uid: "{{ analyst_uid_cmd.stdout | trim }}"
+
+- name: Create ~/samples and local container build directory for {{ analyst_user }}
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    mode: '0750'
+  loop:
+    - "/home/{{ analyst_user }}/samples"
+    - "/home/{{ analyst_user }}/.local/share/secops-toolbox-build"
+
+- name: Check if systemd user lingering is enabled for {{ analyst_user }}
+  ansible.builtin.stat:
+    path: "/var/lib/systemd/linger/{{ analyst_user }}"
+  register: linger_file
+
+- name: Enable systemd user lingering for rootless Podman
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ analyst_user }}"
+  when: not linger_file.stat.exists
+
+- name: Ensure /run/user/{{ analyst_uid }} slice is initialised for headless Podman pulls
+  ansible.builtin.command:
+    cmd: "systemd-run --machine={{ analyst_user }}@.host --user /bin/true"
+  changed_when: false
+
+- name: Write Containerfile for local secops-toolbox (DidierStevens, box-js, RegRipper, INetSim)
+  ansible.builtin.copy:
+    dest: "/home/{{ analyst_user }}/.local/share/secops-toolbox-build/Containerfile"
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    mode: '0644'
+    content: |
+      FROM docker.io/kalilinux/kali-rolling:latest
+      ENV DEBIAN_FRONTEND=noninteractive
+      RUN apt-get update && apt-get install -y --no-install-recommends \
+          python3 curl ca-certificates git nodejs npm perl \
+          regripper inetsim \
+          && npm install -g box-js \
+          && curl -sSL https://raw.githubusercontent.com/DidierStevens/DidierStevensSuite/master/pdfid.py -o /usr/local/bin/pdfid.py \
+          && curl -sSL https://raw.githubusercontent.com/DidierStevens/DidierStevensSuite/master/pdf-parser.py -o /usr/local/bin/pdf-parser.py \
+          && sed -i '1s|^#!/usr/bin/env python$|#!/usr/bin/env python3|' /usr/local/bin/pdfid.py /usr/local/bin/pdf-parser.py \
+          && chmod +x /usr/local/bin/pdfid.py /usr/local/bin/pdf-parser.py \
+          && ln -sf /usr/bin/regripper /usr/local/bin/rip.pl \
+          && apt-get clean && rm -rf /var/lib/apt/lists/*
+      WORKDIR /work
+
+- name: Check if localhost/secops-toolbox:latest image already exists for {{ analyst_user }}
+  ansible.builtin.command:
+    cmd: podman image exists localhost/secops-toolbox:latest
+  become: true
+  become_user: "{{ analyst_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ analyst_uid }}"
+  register: toolbox_img_check
+  failed_when: false
+  changed_when: false
+
+- name: Build localhost/secops-toolbox:latest rootless image as {{ analyst_user }}
+  ansible.builtin.command:
+    cmd: "podman build -t localhost/secops-toolbox:latest /home/{{ analyst_user }}/.local/share/secops-toolbox-build"
+  become: true
+  become_user: "{{ analyst_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ analyst_uid }}"
+  when: toolbox_img_check.rc != 0
+
+- name: Pre-pull remote rootless CLI and Web Podman images as {{ analyst_user }}
+  containers.podman.podman_image:
+    name: "{{ item }}"
+    state: present
+  become: true
+  become_user: "{{ analyst_user }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ analyst_uid }}"
+  loop: "{{ ((podman_cli_tools | map(attribute='image') | list) + (podman_web_tools | map(attribute='image') | list)) | unique | reject('match', '^localhost/') | list }}"
+
+- name: Deploy rootless Podman CLI wrapper scripts to /usr/local/bin
+  ansible.builtin.template:
+    src: podman_cli_wrapper.sh.j2
+    dest: "/usr/local/bin/{{ item.name }}"
+    mode: '0755'
+  loop: "{{ podman_cli_tools }}"
+
+- name: Deploy rootless Podman Web UI launchers to /usr/local/bin
+  ansible.builtin.template:
+    src: podman_web_wrapper.sh.j2
+    dest: "/usr/local/bin/{{ item.name }}-server"
+    mode: '0755'
+  loop: "{{ podman_web_tools }}"

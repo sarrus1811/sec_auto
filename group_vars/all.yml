@@ -1,0 +1,146 @@
+---
+# Dynamically target the account invoking the playbook (even under sudo)
+analyst_user: "{{ lookup('env', 'SUDO_USER') | default(lookup('env', 'USER'), true) }}"
+mise_data_dir: /opt/mise
+mise_cache_dir: /var/cache/mise
+telemetry_log_dir: /var/log/secops-telemetry
+
+# Language Runtimes & Core Cloud/Cluster
+mise_runtimes:
+  python:
+    - "3.12"
+    - "3.11"
+  uv: "latest"
+  dotnet:
+    - "8.0"
+    - "9.0"
+  go: "1.23"
+  java: "temurin-21"
+  node: "22"
+  awscli: "latest"
+  kubectl: "latest"
+
+# Isolated .NET Global Reversing & Decompilation Tools
+mise_dotnet_tools:
+  - ilspycmd
+
+# Isolated DFIR, Reversing, Cloud & Emulation Tools (Compiled via uvx)
+mise_pipx_tools:
+  # Memory, Disk & Triage Forensics
+  - volatility3
+  - timesketch
+  - lnkparse3
+  - dissect.target
+  # Cloud & Hash Identification
+  - azure-cli
+  - hashid
+  - name-that-hash
+  # Malware Reversing, Capabilities & Emulation
+  - flare-capa
+  - floss
+  - qiling
+  - speakeasy-emulator
+  - angr
+  - pyinstxtractor-ng
+  # Dynamic Instrumentation, Mobile & Firmware Reversing
+  - frida-tools
+  - objection
+  - androguard
+  - apkid
+  - quark-engine
+  - pymobiledevice3
+  # Document, Macro & Phishing Deobfuscation
+  - oletools
+  - XLMMacroDeobfuscator
+  - peepdf-3
+  - eml-analyzer
+  # Detection Engineering & Sigma Execution
+  - sigma-cli
+
+# Tier 2 Rust Tools (Isolated via cargo)
+mise_cargo_tools:
+  - binwalk
+
+# Precompiled Standalone Rust/Go/C++ Binaries (Managed via GitHub backend)
+mise_github_tools:
+  # ProjectDiscovery Nuclei & Recon Suite
+  - repo: "projectdiscovery/nuclei"
+  - repo: "projectdiscovery/httpx"
+  - repo: "projectdiscovery/subfinder"
+  - repo: "projectdiscovery/naabu"
+  - repo: "projectdiscovery/katana"
+  
+  # Container & Kubernetes Forensics / Auditing
+  - repo: "wagoodman/dive"
+  - repo: "google/go-containerregistry"
+    exe: "crane"
+  - repo: "aquasecurity/trivy"
+  - repo: "anchore/syft"
+  - repo: "derailed/k9s"
+  - repo: "stern/stern"
+  - repo: "aquasecurity/kube-bench"
+  - repo: "kubescape/kubescape"
+  - repo: "quarkslab/kdigger"
+  
+  # DFIR & Endpoint Analysis
+  - repo: "Yamato-Security/hayabusa"
+    asset: "hayabusa-.*-lin-x64-gnu.zip"
+  - repo: "WithSecureLabs/chainsaw"
+  - repo: "omerbenamram/mft"
+  - repo: "omerbenamram/evtx"
+  - repo: "volatilityfoundation/dwarf2json"
+  
+  # Reversing & Malware Analysis
+  - repo: "mandiant/GoReSym"
+  - repo: "upx/upx"
+  - repo: "orhun/binsider"
+  - repo: "VirusTotal/yara-x"
+    exe: "yr"
+
+# System eBPF Sensors, Debugger Plugins & /opt Suites
+tracee_version: "0.22.0"
+tetragon_version: "1.2.0"
+falco_version: "0.39.2"
+velociraptor_version: "0.73.1"
+ghidra_version: "11.2.1"
+ghidra_date: "20241105"
+pwndbg_version: "2024.08.29"
+zui_version: "1.18.0"
+
+# Rootless Podman CLI Wrappers (mounted with SELinux :Z)
+podman_cli_tools:
+  - name: pdfid
+    image: localhost/secops-toolbox:latest
+    cmd: pdfid.py
+  - name: pdf-parser
+    image: localhost/secops-toolbox:latest
+    cmd: pdf-parser.py
+  - name: box-js
+    image: localhost/secops-toolbox:latest
+    cmd: box-js
+  - name: regripper
+    image: localhost/secops-toolbox:latest
+    cmd: rip.pl
+  - name: inetsim
+    image: localhost/secops-toolbox:latest
+    cmd: inetsim
+  - name: retdec
+    image: docker.io/remnux/retdec:latest
+    cmd: retdec-decompiler.py
+  - name: log2timeline
+    image: docker.io/log2timeline/plaso:latest
+    cmd: log2timeline.py
+  - name: psort
+    image: docker.io/log2timeline/plaso:latest
+    cmd: psort.py
+
+# Rootless Podman Web Suites (bound to 127.0.0.1)
+podman_web_tools:
+  - name: mobsf
+    image: docker.io/opensecurity/mobile-security-framework-mobsf:latest
+    host_port: 8000
+    container_port: 8000
+  - name: cyberchef
+    image: docker.io/mpepping/cyberchef:latest
+    host_port: 8080
+    container_port: 8000

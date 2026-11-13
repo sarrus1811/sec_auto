@@ -1,0 +1,35 @@
+# Ansible runtime artifacts & caches
+*.retry
+.ansible/
+.cache/
+facts.d/
+ansible.log
+
+# Collections & Galaxy roles installed locally (if any)
+collections/
+galaxy_roles/
+
+# Sensitive secrets & tokens
+*.pem
+*.key
+*.env
+.envrc
+*vault_pass*
+secret*
+
+# Temporary archives & build artifacts
+*.zip
+*.tar.gz
+*.tgz
+ansible_files/
+tmp/
+.tmp/
+
+# Editor & OS swap files
+*~
+*.swp
+*.swo
+.#*
+\#*#
+.DS_Store
+.vscode/

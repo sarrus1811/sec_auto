@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Managed by Ansible - Automated Podman + eBPF ELF Malware Detonation Wrapper
+set -euo pipefail
+
+SAMPLE_PATH="${1:-}"
+TIMEOUT_SEC="${2:-15}"
+
+if [[ -z "$SAMPLE_PATH" || ! -f "$SAMPLE_PATH" ]]; then
+    echo "Usage: detonate-elf <path-to-elf> [timeout-seconds]"
+    exit 1
+fi
+
+SAMPLE_DIR="$(cd "$(dirname "$SAMPLE_PATH")" && pwd)"
+SAMPLE_NAME="$(basename "$SAMPLE_PATH")"
+RUN_ID="$(date +%Y%m%d_%H%M%S)_${SAMPLE_NAME}"
+LOG_FILE="{{ telemetry_log_dir }}/detonation_${RUN_ID}.json"
+
+echo "[*] Starting Tracee eBPF sensor..."
+sudo systemctl start tracee.service
+
+echo "[*] Detonating ${SAMPLE_NAME} in air-gapped rootless Podman sandbox for ${TIMEOUT_SEC}s..."
+podman run --rm \
+    --name "sandbox_${RUN_ID}" \
+    --network=none \
+    --cap-drop=ALL \
+    --security-opt=no-new-privileges \
+    --pids-limit=64 \
+    --memory=512m \
+    --volume "${SAMPLE_DIR}:/sandbox:ro,Z" \
+    docker.io/library/almalinux:10 \
+    timeout "${TIMEOUT_SEC}" "/sandbox/${SAMPLE_NAME}" || true
+
+echo "[*] Extracting container eBPF telemetry to ${LOG_FILE}..."
+grep "sandbox_${RUN_ID}" "{{ telemetry_log_dir }}/tracee-containers.json" > "${LOG_FILE}" || true
+echo "[+] Telemetry captured: ${LOG_FILE}"

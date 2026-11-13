@@ -1,0 +1,121 @@
+---
+- name: Create telemetry and /opt suite directories owned by {{ analyst_user }}
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    mode: '0755'
+  loop:
+    - "{{ telemetry_log_dir }}"
+    - /opt/tracee
+    - /opt/tetragon
+    - /opt/falco
+    - /opt/ghidra
+    - /opt/pwndbg
+    - /opt/zui
+
+- name: Download and extract latest Aqua Tracee release into /opt/tracee
+  ansible.builtin.shell: |
+    set -euo pipefail
+    AUTH_HEADER=""
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      AUTH_HEADER="Authorization: Bearer ${GITHUB_TOKEN}"
+    fi
+    TRACEE_URL=$(curl -fsSL ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+      https://api.github.com/repos/aquasecurity/tracee/releases/latest \
+      | jq -r 'first(.assets[] | select(.name | test("tracee.*(x86_64|amd64).*\\.tar\\.gz$")) | .browser_download_url)')
+    curl -fsSL "$TRACEE_URL" -o /tmp/tracee.tar.gz
+    tar -xzf /tmp/tracee.tar.gz -C /opt/tracee
+    rm -f /tmp/tracee.tar.gz
+    TRACEE_BIN=$(find /opt/tracee -type f -name "tracee" -print -quit)
+    chmod +x "$TRACEE_BIN"
+    ln -sf "$TRACEE_BIN" /usr/local/bin/tracee
+  args:
+    executable: /bin/bash
+    creates: /usr/local/bin/tracee
+
+- name: Download latest Velociraptor Linux amd64 binary into /usr/local/bin/velociraptor
+  ansible.builtin.shell: |
+    set -euo pipefail
+    AUTH_HEADER=""
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      AUTH_HEADER="Authorization: Bearer ${GITHUB_TOKEN}"
+    fi
+    VELO_URL=$(curl -fsSL ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+      https://api.github.com/repos/Velocidex/velociraptor/releases \
+      | jq -r 'first(.[].assets[] | select(.name | test("^velociraptor-v[0-9.]+.*-linux-amd64$")) | .browser_download_url)')
+    curl -fsSL "$VELO_URL" -o /usr/local/bin/velociraptor
+    chmod 0755 /usr/local/bin/velociraptor
+  args:
+    executable: /bin/bash
+    creates: /usr/local/bin/velociraptor
+
+- name: Download and extract Cilium Tetragon CLI (tetra) into /opt/tetragon and /usr/local/bin
+  ansible.builtin.shell: |
+    set -euo pipefail
+    AUTH_HEADER=""
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      AUTH_HEADER="Authorization: Bearer ${GITHUB_TOKEN}"
+    fi
+    TETRA_URL=$(curl -fsSL ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+      https://api.github.com/repos/cilium/tetragon/releases/latest \
+      | jq -r 'first(.assets[] | select(.name | test("^tetra-linux-amd64\\.tar\\.gz$")) | .browser_download_url)')
+    curl -fsSL "$TETRA_URL" -o /tmp/tetra.tar.gz
+    tar -xzf /tmp/tetra.tar.gz -C /opt/tetragon
+    rm -f /tmp/tetra.tar.gz
+    TETRA_BIN=$(find /opt/tetragon -type f -name "tetra" -print -quit)
+    chmod 0755 "$TETRA_BIN"
+    ln -sf "$TETRA_BIN" /usr/local/bin/tetra
+  args:
+    executable: /bin/bash
+    creates: /usr/local/bin/tetra
+
+- name: Download and extract Ghidra {{ ghidra_version }} into /opt/ghidra
+  ansible.builtin.unarchive:
+    src: "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_{{ ghidra_version }}_build/ghidra_{{ ghidra_version }}_PUBLIC_{{ ghidra_date }}.zip"
+    dest: /opt/ghidra
+    remote_src: true
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    creates: "/opt/ghidra/ghidra_{{ ghidra_version }}_PUBLIC/ghidraRun"
+
+- name: Expose ghidra CLI launcher in /usr/local/bin
+  ansible.builtin.file:
+    src: "/opt/ghidra/ghidra_{{ ghidra_version }}_PUBLIC/ghidraRun"
+    dest: /usr/local/bin/ghidra
+    state: link
+    force: true
+
+- name: Clone pwndbg into /opt/pwndbg for GDB reversing
+  ansible.builtin.git:
+    repo: "https://github.com/pwndbg/pwndbg.git"
+    dest: /opt/pwndbg
+    version: "{{ pwndbg_version }}"
+    depth: 1
+    force: true
+  become: true
+  become_user: "{{ analyst_user }}"
+
+- name: Configure ~/.gdbinit for {{ analyst_user }} to autoload pwndbg
+  ansible.builtin.copy:
+    dest: "{{ '/root' if analyst_user == 'root' else '/home/' + analyst_user }}/.gdbinit"
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    mode: '0644'
+    content: |
+      set disassembly-flavor intel
+      set pagination off
+      set history save on
+      source /opt/pwndbg/gdbinit.py
+
+- name: Download and extract Brimdata Zui (Zeek/Suricata desktop suite) into /opt/zui
+  ansible.builtin.unarchive:
+    src: "https://github.com/brimdata/zui/releases/download/v{{ zui_version }}/Zui-{{ zui_version }}-linux-x64.tar.gz"
+    dest: /opt/zui
+    remote_src: true
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    extra_opts: [--strip-components=1]
+    creates: /opt/zui/zui
+  failed_when: false

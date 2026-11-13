@@ -1,0 +1,76 @@
+---
+- name: Create global mise directories owned by invoking user
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    mode: '0755'
+  loop:
+    - "{{ mise_data_dir }}"
+    - "{{ mise_cache_dir }}"
+    - /etc/mise
+
+- name: Install mise binary into /usr/local/bin
+  ansible.builtin.get_url:
+    url: "https://mise.run"
+    dest: /usr/local/bin/mise
+    mode: '0755'
+
+- name: Expose mise shims globally in /etc/profile.d for SSH and Emacs TRAMP
+  ansible.builtin.copy:
+    dest: /etc/profile.d/mise.sh
+    mode: '0644'
+    content: |
+      export MISE_DATA_DIR="{{ mise_data_dir }}"
+      export MISE_CACHE_DIR="{{ mise_cache_dir }}"
+      export MISE_GLOBAL_CONFIG_FILE="/etc/mise/config.toml"
+      export UV_LINK_MODE=copy
+      eval "$(/usr/local/bin/mise activate bash --shims)"
+      export PATH="{{ mise_data_dir }}/shims:$PATH"
+
+- name: Render declarative /etc/mise/config.toml manifest
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest: /etc/mise/config.toml
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    mode: '0644'
+  register: mise_manifest
+
+- name: Ensure mise directories are owned by invoking user recursively
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ analyst_user }}"
+    group: "{{ analyst_user }}"
+    recurse: true
+  loop:
+    - "{{ mise_data_dir }}"
+    - "{{ mise_cache_dir }}"
+
+- name: Install and converge all runtimes, uvx Python tools, cargo tools, and github binaries
+  ansible.builtin.command:
+    cmd: /usr/local/bin/mise install --yes
+  become: true
+  become_user: "{{ analyst_user }}"
+  environment:
+    MISE_DATA_DIR: "{{ mise_data_dir }}"
+    MISE_CACHE_DIR: "{{ mise_cache_dir }}"
+    MISE_GLOBAL_CONFIG_FILE: "/etc/mise/config.toml"
+    UV_LINK_MODE: "copy"
+    HOME: "{{ '/root' if analyst_user == 'root' else '/home/' + analyst_user }}"
+  register: mise_run
+  changed_when: "'installed' in mise_run.stdout or mise_manifest.changed"
+
+- name: Reshim mise binaries so cargo and uvx entrypoints are in PATH immediately
+  ansible.builtin.command:
+    cmd: /usr/local/bin/mise reshim
+  become: true
+  become_user: "{{ analyst_user }}"
+  environment:
+    MISE_DATA_DIR: "{{ mise_data_dir }}"
+    MISE_CACHE_DIR: "{{ mise_cache_dir }}"
+    MISE_GLOBAL_CONFIG_FILE: "/etc/mise/config.toml"
+    HOME: "{{ '/root' if analyst_user == 'root' else '/home/' + analyst_user }}"
+  changed_when: false

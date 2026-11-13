@@ -1,0 +1,14 @@
+[Unit]
+Description=Aqua Tracee eBPF Container Malware Telemetry Sensor
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/tracee/dist/tracee \
+  --scope container=new \
+  --events execve,ptrace,memfd_create,security_file_open,security_socket_connect,process_vm_writev \
+  --output json:{{ telemetry_log_dir }}/tracee-containers.json
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
